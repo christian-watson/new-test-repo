@@ -1,0 +1,215 @@
+@page "/upload"
+@rendermode InteractiveServer
+
+<PageTitle>Blazor Server File Upload</PageTitle>
+
+<h1>Blazor Server File Upload</h1>
+
+<div style="margin-bottom: 20px; display: flex;">
+    <div>Select your file:</div>
+    <InputFile OnChange="FileUploaded" />
+</div>
+
+<h2>Selected file</h2>
+<div>
+    <div>File name: @FileName</div>
+    <div>File size: @FileSize.ToString("n0") bytes. @FileSizeMB.ToString("n0") megabyte(s). </div>
+    <div>File type: @FileType</div>
+    <div>Last modified: @LastModified</div>
+</div>
+
+@if (!string.IsNullOrEmpty(ErrorMessage))
+{
+    <div>Error: @ErrorMessage</div>
+}
+
+<div>
+    @if(ReaderEvent.returnStrings(FileName) != null){
+    <p>Lines in the csv: @ReaderEvent.returnStrings(FileName).Count</p>
+    }
+
+</div>
+    @if (readerIDDict != null && readerIDDict.Count > 0)
+{
+    <p>Dictionary parse:</p>
+    <table>
+        <thead>
+            <tr style="background-color: white;">
+                <th>Reader ID</th>
+                <th>Reader name</th>
+                <th>event num</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var kvp in readerIDDict)
+            {
+                var readerId = kvp.Key; 
+                var readerEvents = kvp.Value;
+                var readerName = readerEvents.First().ReaderDesc;
+
+                <tr>
+                    <td>@readerId</td>
+                    <td>@readerName</td>
+                    <td>@readerEvents.Count</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No data available.</p>
+}
+
+
+@code {
+    private Dictionary<string,List<ReaderEvent>> readerIDDict = new Dictionary<string, List<ReaderEvent>>();
+    public class ReaderEvent{
+        
+        private List<ReaderEvent> readerEvents = new List<ReaderEvent>();
+        public string Time {get; set;}
+        public string Location {get; set;}
+        public string ReaderDesc {get; set;}
+        public string DevId {get; set;}
+        public string MachineId {get; set;}
+        public string ReaderId {get; set;}
+
+        public ReaderEvent(){
+            Time = "0";
+            Location = "";
+            ReaderDesc = "";
+            DevId = "";
+            MachineId = "";
+            ReaderId = MachineId + DevId;
+
+        }
+        public ReaderEvent(string newTime, string newLocation, string newReaderDesc, string newDevID, string newMachineId){
+            Time = newTime;
+            Location = newLocation;
+            ReaderDesc = newReaderDesc;
+            DevId = newDevID;
+            MachineId = newMachineId;
+            ReaderId = MachineId + DevId;
+        }
+        public override string ToString(){
+            return $"Time: {Time}. Location: {Location}. Reader Description: {ReaderDesc}. DevId: {DevId}. Machine ID: {MachineId}";
+        }
+
+        public static Dictionary<String, List<ReaderEvent>> returnDictionary(List<ReaderEvent> readerEvents){
+            Dictionary<String,List<ReaderEvent>> returnDict = new Dictionary<string, List<ReaderEvent>>();
+            foreach(ReaderEvent i in readerEvents){
+                if(returnDict.ContainsKey(i.ReaderId)){
+                    returnDict.TryGetValue(i.ReaderId, out var value);
+                    value.Add(i);
+                }
+                else{
+                    List<ReaderEvent> newReader = new List<ReaderEvent>();
+                    newReader.Add(i);
+                    returnDict.Add(i.ReaderId,newReader);
+                }
+            }
+            return returnDict;
+            }
+        public static List<String[]> returnStrings(string filename){
+        String line;
+        List<String[]> returnString = new List<string[]>();
+        try{
+            StreamReader sr = new StreamReader(filename);
+            line = sr.ReadLine();
+            line = sr.ReadLine();
+            while (line!= null){
+                returnString.Add(line.Split(','));
+                line = sr.ReadLine();
+            }
+        sr.Close();
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine("Exception: " + e.Message);
+            return null;
+        }
+        finally
+        {
+            Console.WriteLine("Executing finally block.");
+        }
+    return returnString;
+    }
+
+
+        public static List<ReaderEvent> Display(List<String[]> returnList){
+            List<ReaderEvent> readerEvents = new List<ReaderEvent>();
+            foreach(string[] i in returnList){
+                if (i.Length >= 5)
+                {
+                    ReaderEvent newReader = new ReaderEvent(i[0], i[1], i[2], i[3], i[4]);
+                    readerEvents.Add(newReader);
+                }
+            }
+             return readerEvents;
+        }
+
+        
+
+        
+
+    }
+
+
+    
+    // private List<string[]> data = new List<string[]>();
+    // private List<string> lines = new List<string>();
+    private List<ReaderEvent> newEvents = new List<ReaderEvent>();
+    public string FileName { get; set; } = "";
+    public long FileSize { get; set; }
+    public long FileSizeMB {get; set;}
+    public string FileType { get; set; } = "";
+    public DateTimeOffset LastModified { get; set; }
+    public string ErrorMessage { get; set; } = "";
+
+    const int MAX_FILESIZE = 1000000 * 1024; // 2 MB
+    
+    public async Task FileUploaded(InputFileChangeEventArgs e)
+{
+    var browserFile = e.File;
+
+    if (browserFile != null)
+    {
+        FileSize = browserFile.Size;
+        FileSizeMB = FileSize / 1_000_000;
+        FileType = browserFile.ContentType;
+        FileName = browserFile.Name;
+        LastModified = browserFile.LastModified;
+
+        try
+        {
+            // Save the uploaded file
+            var fileStream = browserFile.OpenReadStream(MAX_FILESIZE);
+            var targetFilePath = Path.Combine(Path.GetTempPath(), FileName);
+
+            using (var destinationStream = new FileStream(targetFilePath, FileMode.Create))
+            {
+                await fileStream.CopyToAsync(destinationStream);
+            }
+
+            // Process the file after saving
+            finalDisplay(targetFilePath);
+        }
+        catch (Exception exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+    }
+}
+
+private void finalDisplay(string fileName)
+    {
+        List<string[]> listCount = ReaderEvent.returnStrings(fileName);
+        if (listCount != null)
+        {
+            newEvents = ReaderEvent.Display(listCount);
+            readerIDDict = ReaderEvent.returnDictionary(newEvents);
+        }
+    }
+    
+
+}
